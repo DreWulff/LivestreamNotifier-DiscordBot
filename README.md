@@ -36,7 +36,7 @@ docker build -t livestream-notifier .
 ```
 * `run`: This command runs the `livestream-notifier` container.
 ```
-docker run -d file-download-server
+docker run -d livestream-notifier
 ```
 
 ## Discord `/` Commands
