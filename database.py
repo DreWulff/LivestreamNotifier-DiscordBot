@@ -16,14 +16,14 @@ def execute_statement(statement) -> sqlite3.Cursor:
         print(e)
         return None
 
-def connect_database(filename, path="./") -> sqlite3.Connection:
+def connect_database(filename) -> sqlite3.Connection:
     """
     Create a database connection to an SQLite database.
     In case database doesn't exist, it is created.
     """
     conn = None
     try:
-        conn = sqlite3.connect(path + filename)
+        conn = sqlite3.connect(filename)
         print(sqlite3.sqlite_version)
     except sqlite3.Error as e:
         print(e)
@@ -36,7 +36,11 @@ def create_channel_table() -> None:
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
                 platform TEXT NOT NULL,
-                dschannel INTEGER NOT NULL);
+                dschannel INTEGER NOT NULL,
+                everyone BOOLEAN NOT NULL DEFAULT FALSE,
+                islive BOOLEAN NOT NULL DEFAULT FALSE,
+                livetitle TEXT,
+                deleteflag BOOLEAN NOT NULL DEFAULT FALSE);
         """
     execute_statement(sql_statement)
 
@@ -66,12 +70,21 @@ def add_channel(channel, platform, dschannel) -> None:
         """
     execute_statement(sql_statement)
 
-def update_post_channel(dschannel, id) -> None:
-    """Determines in which Discord channel will live notifications be posted."""
+def update_int_value(table, column, value, condition_column, condition) -> None:
+    """Changes a value in the specified column and table given a condition."""
     sql_statement = f"""
-        UPDATE channels
-        SET dschannel = {dschannel}
-        WHERE id = {id};
+        UPDATE {table}
+        SET {column} = {value}
+        WHERE {condition_column} = {condition};
+        """
+    execute_statement(sql_statement)
+
+def update_str_value(table, column, value, condition_column, condition) -> None:
+    """Changes a value in the specified column and table given a condition."""
+    sql_statement = f"""
+        UPDATE {table}
+        SET {column} = '{value}'
+        WHERE {condition_column} = {condition};
         """
     execute_statement(sql_statement)
 
@@ -211,8 +224,7 @@ def remove_sub(user_id, channel_id) -> None:
 
 def init_connection():
     global CONNECTION
-    path = os.path.dirname(os.path.realpath(__file__)) + "/data/"
-    CONNECTION = connect_database("livestreams.db", path)
+    CONNECTION = connect_database("livestreams.db")
 
 if __name__ == '__main__':
     init_connection()
