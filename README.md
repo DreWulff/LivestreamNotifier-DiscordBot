@@ -24,6 +24,20 @@ On the **first run** make sure to run the following command to initialize the da
 Afterwards all subsequent executions of the bot only require this command:
 
     python bot.py
+  
+## Docker Setup
+It is highly recommended to run the app in Docker, as to avoid conflicts with different installed versions of Python and its modules.  
+The container is setup to install a lightweight base image capable of running Python 3, alongside any needed modules required.
+
+To setup and run a Docker container with the app execute the next commands:  
+* `build`: This command prepares a container of name `livestream-notifier`, downloading its required images and resources, and copying the app's files into the container following the sequence defined in the `Dockerfile`.
+```
+docker build -t livestream-notifier .
+```
+* `run`: This command runs the `livestream-notifier` container.
+```
+docker run -d file-download-server
+```
 
 ## Discord `/` Commands
 * `/add [platform] [channel]`:
@@ -38,13 +52,15 @@ Afterwards all subsequent executions of the bot only require this command:
   * Registers the user to be mentioned when `channel` goes live.
 * `/unsubscribe [channel]`:
   * Removes subscription to specified `channel`.
-* `/getchannels [platform]`:
+* `/channels [platform]`:
   * Lists all registered channels from specified `platform` and their current status.
+* `/mentions [channel]`:
+  * Changes the notification mode of the channel between mentioning everyone connected (`@here`) or subscribers only.
 * `/help`:
   * Shows the user a list of all of this bot's commands.
 
 ## Notes
-* The bot checks the HTML of each channel on a **1[minute] period** to identify if the channel is live or not.
+* The bot checks the HTML of each channel on a **5[minute] period** to identify if the channel is live or not.
 
 ## ToDo
-* Add administrator role verification for `/add`, `/remove` and `/setchannel` commands.
+* Add administrator role verification for `/add`, `/remove`, `/mentions` and `/setchannel` commands.
