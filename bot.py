@@ -22,9 +22,6 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 INTENTS = discord.Intents.default()
 BOT = commands.Bot(command_prefix="!", intents=INTENTS)
 
-LIVES_YT = dict()
-LIVES_TW = dict()
-
 def remove_urls(title) -> str:
     """Removes any urls present in a livestream's title."""
     if (title.find('http') > 0):
@@ -38,18 +35,42 @@ def remove_urls(title) -> str:
         final = title
     return final
 
-def get_notify_message(url, title, name, channel_id) -> str:
+def get_notify_message(url, title, name, channel_id, mention_everyone) -> str:
     """Structures the message to notify channel subscribers."""
     prefix = f'## {name}\'s [stream is live]({url}) !'
-    message = prefix + f'\nGo watch today\'s stream **{remove_urls(title)}**\n*Subscribers:  '
-    for sub in database.get_subs(channel_id):
-        message += f"<@{sub}>; "
+    message = prefix + f'\nGo watch today\'s stream **{remove_urls(title)}**\n*'
+    if (mention_everyone):
+        message += '@here get in here!'
+    else:
+        message += 'Subscribers:  '
+        for sub in database.get_subs(channel_id):
+            message += f"<@{sub}>; "
     message += "*"
     return message
 
+async def register_channel_status(name, title, url, is_live) -> None:
+    """Handles the actions to be realized when a stream is found to go online/offline."""
+    ch_id, ch_name, platform, dschannel_id, mentions, status, ch_title, flag = database.get_channel_by_name(name)
+    if (not bool(status) and is_live):
+        message = get_notify_message(url, title, name, ch_id, bool(mentions))
+        database.update_int_value('channels', 'islive', True, 'id', ch_id)
+        database.update_str_value('channels', 'livetitle', title, 'id', ch_id)
+        database.update_int_value('channels', 'deleteflag', False, 'id', ch_id)
+        ds_channel = await BOT.fetch_channel(dschannel_id)
+        allowed_mentions = discord.AllowedMentions(roles=True)
+        await ds_channel.send(message, allowed_mentions=allowed_mentions)
+    elif (bool(status) and is_live):
+        database.update_int_value('channels', 'deleteflag', False, 'id', ch_id)
+    elif (bool(status) and not is_live):
+        if (bool(flag)):
+            database.update_int_value('channels', 'islive', False, 'id', ch_id)
+            database.update_str_value('channels', 'livetitle', None, 'id', ch_id)
+            database.update_int_value('channels', 'deleteflag', False, 'id', ch_id)
+        else:
+            database.update_int_value('channels', 'deleteflag', True, 'id', ch_id)
+
 async def is_live_YT(name) -> None:
     """Checks if a YouTube channel is live."""
-    global LIVES_YT, GUILD
     url = f'https://www.youtube.com/@{name}/live'
     x = requests.get(url)
     content = x.content.decode('utf8')
@@ -58,37 +79,19 @@ async def is_live_YT(name) -> None:
     aux = aux[1].split('>')[0].split('?') if len(aux) > 0 else []
     is_livestream = aux.count('watch') > 0
     is_live = content.split('"status":"', maxsplit=2)[1].split('"', maxsplit=2)[0] == 'OK' if is_livestream else False
-    
-    if ((name not in LIVES_YT.keys()) and is_livestream and is_live):
-        LIVES_YT[name] = [url, title]
-        channel_data = database.get_channel_by_name(name)
-        ds_channel = BOT.get_channel(channel_data[3])
-        message = get_notify_message(url, title, name, channel_data[0])
-        allowed_mentions = discord.AllowedMentions(roles=True)
-        await ds_channel.send(message, allowed_mentions=allowed_mentions)
-    elif ((name in LIVES_YT.keys()) and (not is_livestream or not is_live)):
-        LIVES_YT.pop(name)
+    await register_channel_status(name, title, url, is_live)
 
 async def is_live_TW(name) -> None:
     """Checks if a Twitch channel is live."""
-    global LIVES_TW
     url = f'https://www.twitch.tv/{name}'
     x = requests.get(url)
     content = x.content.decode('utf8')
-    is_live = content.find('isLiveBroadcast') > 0
-    if ((name not in LIVES_TW.keys()) and is_live):
-        title = content.split('"VideoObject","description":"')[1].split('"')[0]
-        LIVES_TW[name] = [url, title]
-        channel_data = database.get_channel_by_name(name)
-        ds_channel = BOT.get_channel(channel_data[3])
-        message = get_notify_message(url, title, name, channel_data[0])
-        allowed_mentions = discord.AllowedMentions(roles=True)
-        await ds_channel.send(message, allowed_mentions=allowed_mentions)
-    elif ((name in LIVES_TW.keys()) and not is_live):
-        LIVES_TW.pop(name)
+    is_live = content.find('"isLiveBroadcast":true') > 0
+    title = content.split('"VideoObject","description":"')[1].split('"')[0] if is_live else ""
+    await register_channel_status(name, title, url, is_live)
 
 # Periodic check for livestreams
-@tasks.loop(minutes=1)
+@tasks.loop(minutes=5)
 async def check_live():
     yt_channels = [channel_row[1] for channel_row in database.get_channels("YouTube")]
     for channel in yt_channels:
@@ -175,7 +178,7 @@ async def setchannel(
     if (channel_id not in ids):
         await interaction.response.send_message("Channel doesn't exist!", ephemeral=True)
     else:
-        database.update_post_channel(interaction.channel.id, channel_id)
+        database.update_int_value("channels", "dschannel", interaction.channel.id, "id", channel_id)
         channel_name = database.get_channel(channel_id)[1]
         await interaction.response.send_message(f"{channel_name}'s livestreams will be notified here!")
 
@@ -186,6 +189,43 @@ async def autocomplete_setchannel_channel(
     channels = database.get_channels()
     channels = [discord.app_commands.Choice(name=channel[1], value=str(channel[0])) for channel in channels]
     return channels
+
+# ⭐ /mentions decorators
+@BOT.tree.command(name="mentions", description="Sets whether the notification will mention everyone or only the subscribers.")
+async def mentions(
+        interaction: discord.Interaction,
+        channel: str,
+        mode: str): # True: Mention everyone; False: Mention subscribers only
+    channel_id = int(channel)
+    rows = database.get_channels()
+    ids = [row[0] for row in rows]
+    mode_bool = True if mode == 'Everyone' else False
+    if (channel_id not in ids):
+        await interaction.response.send_message("Channel doesn't exist!", ephemeral=True)
+    else:
+        database.update_int_value("channels", "everyone", mode_bool, "id", channel_id)
+        channel_name = database.get_channel(channel_id)[1]
+        if (mode_bool):
+            await interaction.response.send_message(f"## {channel_name} will now be notified to everyone!")
+        else:
+            await interaction.response.send_message(f"## {channel_name} will now only be notified to subscribers!")
+
+@mentions.autocomplete("channel")
+async def autocomplete_mentions_channel(
+    interaction: discord.Interaction,
+    current: str):
+    channels = database.get_channels()
+    channels = [discord.app_commands.Choice(name=channel[1], value=str(channel[0])) for channel in channels]
+    return channels
+
+@mentions.autocomplete("mode")
+async def autocomplete_mentions_mode(
+    interaction: discord.Interaction,
+    current: str):
+    modes = [
+        discord.app_commands.Choice(name='Everyone', value='Everyone'),
+        discord.app_commands.Choice(name='Subscribers only', value='Subscribers only')]
+    return modes
 
 # ⭐ /subscribe decorators
 @BOT.tree.command(name="subscribe", description="Subscribe to specified channel.")
@@ -234,17 +274,22 @@ async def autocomplete_unsub_channel(
 async def channels(
         interaction: discord.Interaction,
         platform: str):
-    if (platform.lower() in ["youtube", "twitch"]):
-        channels = database.get_channels(platform)
-        channels = [channel[1] for channel in channels]
-        channel_list = "# Channels:"
-        for channel in channels:
-            lives = dict(LIVES_TW, **LIVES_YT)
-            status = f"[{remove_urls(lives[channel][1])}](<{lives[channel][0]}>)" if (channel in lives) else "offline"
-            channel_list += f"\n* **{channel}**: {status}"
-        await interaction.response.send_message(channel_list, ephemeral=True)
+    if (platform.lower() == "youtube"):
+        url = "https://www.youtube.com/@{name}/live"
+    elif (platform.lower() == "twitch"):
+        url = "https://www.twitch.tv/{name}"
     else:
         await interaction.response.send_message("Invalid platform name.", ephemeral=True)
+        return None
+    channels = database.get_channels(platform)
+    # channel = [name, status, url, title]
+    channels = [[channel[1], bool(channel[5]), url.format(name=channel[1]), channel[6]] for channel in channels]
+    channel_list = "# Channels:"
+    for channel in channels:
+        status = f"[{remove_urls(channel[3])}](<{channel[2]}>)" if channel[1] else "offline"
+        channel_list += f"\n* **{channel[0]}**: {status}"
+    await interaction.response.send_message(channel_list, ephemeral=True)
+    
 
 @channels.autocomplete("platform")
 async def autocomplete_channels_platform(
@@ -268,8 +313,10 @@ async def help(interaction: discord.Interaction):
                                             "   * Registers the user to be mentioned when `channel` goes live.\n"+
                                             "* `/unsubscribe [channel]`:\n"+
                                             "   * Removes subscription to specified `channel`.\n" +
-                                            "* `/getchannels [platform]`:\n"+
+                                            "* `/channels [platform]`:\n"+
                                             "   * Lists all registered channels from specified `platform` and their current status.\n" +
+                                            "* `/mentions [channel]`:\n"+
+                                            "   * Changes the notification mode of the channel between mentioning everyone connected (`@here`) or subscribers only.\n" +
                                             "* `/help`:\n"+
                                             "   * Shows the user a list of all of this bot's commands.",
                                             ephemeral=True)
