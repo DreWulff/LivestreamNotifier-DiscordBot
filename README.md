@@ -33,6 +33,7 @@ Afterwards all subsequent executions of the bot only require this command:
 ## Docker Setup
 It is highly recommended to run the app in Docker, as to avoid conflicts with different installed versions of Python and its modules.  
 The container is setup to install a lightweight base image capable of running Python 3, alongside any needed modules required.
+### *It is required to write the token of your Discord bot in the .env file before building the container.*
 
 To setup and run a Docker container with the app execute the next commands:  
 * `build`: This command prepares a container of name `livestream-notifier`, downloading its required images and resources, and copying the app's files into the container following the sequence defined in the `Dockerfile`.
