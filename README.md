@@ -9,6 +9,11 @@ Download and extract the latest release, or clone this repository in the root fo
     git clone https://github.com/DreWulff/LivestreamNotifier-DiscordBot
 
 Make sure all libraries/modules required are installed.
+In case they are not, they can be installed through the following commands:
+
+    pip install discord.py
+    pip install requests
+    pip install python-dotenv
 
 Create a `.env` file with the next line, replacing the values in brackets:
 
